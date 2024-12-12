@@ -265,6 +265,7 @@ export interface Message {
      * @example 60000000
      */
     value: bigint;
+    valueExtra?: ExtraCurrency[];
     /**
      * @format bigint
      * @example 5681002
@@ -930,6 +931,7 @@ export interface Account {
      * @example 123456789
      */
     balance: bigint;
+    extraBalance?: ExtraCurrency[];
     /**
      * {'USD': 1, 'IDR': 1000}
      * @example {}
@@ -1332,6 +1334,15 @@ export interface BlockchainConfig {
         accounts: Address[];
         suspendedUntil: number;
     };
+    /** precompiled contracts */
+    '45'?: {
+        contracts: {
+            /** @format address */
+            codeHash: Address;
+            /** @format int64 */
+            gasUsage: number;
+        }[];
+    };
     /** Bridge parameters for wrapping TON in other networks. */
     '71'?: {
         oracleBridgeParams: OracleBridgeParams;
@@ -1462,7 +1473,7 @@ export interface ImagePreview {
     url: string;
 }
 
-export type NftApprovedBy = ('getgems' | 'tonkeeper' | 'ton.diamonds')[];
+export type NftApprovedBy = ('getgems' | 'tonkeeper')[];
 
 /** @example "whitelist" */
 export enum TrustType {
@@ -1614,6 +1625,7 @@ export interface Action {
     /** @example "TonTransfer" */
     type:
         | 'TonTransfer'
+        | 'ExtraCurrencyTransfer'
         | 'JettonTransfer'
         | 'JettonBurn'
         | 'JettonMint'
@@ -1637,6 +1649,7 @@ export interface Action {
     /** @example "ok" */
     status: 'ok' | 'failed';
     TonTransfer?: TonTransferAction;
+    ExtraCurrencyTransfer?: ExtraCurrencyTransferAction;
     ContractDeploy?: ContractDeployAction;
     JettonTransfer?: JettonTransferAction;
     JettonBurn?: JettonBurnAction;
@@ -1680,6 +1693,33 @@ export interface TonTransferAction {
     comment?: string;
     encryptedComment?: EncryptedComment;
     refund?: Refund;
+}
+
+export interface EcPreview {
+    /** @example "FMS" */
+    symbol: string;
+    /** @example 5 */
+    decimals: number;
+    /** @example "https://cache.tonapi.io/images/extra.jpg" */
+    image: string;
+}
+
+export interface ExtraCurrencyTransferAction {
+    sender: AccountAddress;
+    recipient: AccountAddress;
+    /**
+     * amount in quanta of tokens
+     * @format bigint
+     * @example "1000000000"
+     */
+    amount: bigint;
+    /**
+     * @example "Hi! This is your salary.
+     * From accounting with love."
+     */
+    comment?: string;
+    encryptedComment?: EncryptedComment;
+    currency: EcPreview;
 }
 
 export interface SmartContractAction {
@@ -2288,6 +2328,14 @@ export interface DecodedMessage {
             op: number;
             rawMessages: DecodedRawMessage[];
         };
+        walletV5?: {
+            /**
+             * @format int64
+             * @example 1
+             */
+            validUntil: number;
+            rawMessages: DecodedRawMessage[];
+        };
         walletHighloadV2?: {
             /**
              * @format int64
@@ -2357,7 +2405,10 @@ export interface JettonMetadata {
     symbol: string;
     /** @example "9" */
     decimals: string;
-    /** @example "https://cache.tonapi.io/images/jetton.jpg" */
+    /**
+     * this field currently returns a cached image URL (e.g., "https://cache.tonapi.io/images/jetton.jpg"). In the future, this will be replaced with the original URL from the metadata. The cached image is already available in the `preview` field of `JettonInfo` and will remain there.
+     * @example "https://bitcoincash-example.github.io/website/logo.png"
+     */
     image?: string;
     /** @example "Wrapped Toncoin" */
     description?: string;
@@ -2400,6 +2451,8 @@ export interface JettonInfo {
     totalSupply: bigint;
     admin?: AccountAddress;
     metadata: JettonMetadata;
+    /** @example "https://cache.tonapi.io/images/jetton.jpg" */
+    preview: string;
     verification: JettonVerificationType;
     /**
      * @format int32
@@ -2705,6 +2758,23 @@ export interface MarketTonRates {
     lastDateUpdate: number;
 }
 
+export interface ExtraCurrency {
+    /**
+     * @format int32
+     * @example 239
+     */
+    id: number;
+    /**
+     * @format bigint
+     * @example "1000000000"
+     */
+    amount: bigint;
+    /** @example "FMS" */
+    name?: string;
+    /** @example 5 */
+    decimals: number;
+}
+
 export type QueryParamsType = Record<string | number, any>;
 export type ResponseFormat = keyof Omit<Body, 'body' | 'bodyUsed'>;
 
@@ -2815,7 +2885,7 @@ class HttpClient {
         const headers = {
             ...(baseApiParams.headers ?? {}),
             ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-            'x-tonapi-client': `tonapi-js@0.2.0`
+            'x-tonapi-client': `tonapi-js@0.1.0-beta.0`
         };
 
         const preparedApiConfig = {
@@ -3206,6 +3276,7 @@ const components = {
             bounce: { type: 'boolean' },
             bounced: { type: 'boolean' },
             value: { type: 'integer', format: 'int64', 'x-js-format': 'bigint' },
+            value_extra: { type: 'array', items: { $ref: '#/components/schemas/ExtraCurrency' } },
             fwd_fee: { type: 'integer', format: 'int64', 'x-js-format': 'bigint' },
             ihr_fee: { type: 'integer', format: 'int64', 'x-js-format': 'bigint' },
             destination: { $ref: '#/components/schemas/AccountAddress' },
@@ -3652,6 +3723,7 @@ const components = {
         properties: {
             address: { type: 'string', format: 'address' },
             balance: { type: 'integer', format: 'int64', 'x-js-format': 'bigint' },
+            extra_balance: { type: 'array', items: { $ref: '#/components/schemas/ExtraCurrency' } },
             currencies_balance: { type: 'object', additionalProperties: true },
             last_activity: { type: 'integer', format: 'int64' },
             status: { $ref: '#/components/schemas/AccountStatus' },
@@ -4011,6 +4083,23 @@ const components = {
                     suspended_until: { type: 'integer' }
                 }
             },
+            '45': {
+                type: 'object',
+                required: ['contracts'],
+                properties: {
+                    contracts: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            required: ['code_hash', 'gas_usage'],
+                            properties: {
+                                code_hash: { type: 'string', format: 'address' },
+                                gas_usage: { type: 'integer', format: 'int64' }
+                            }
+                        }
+                    }
+                }
+            },
             '71': {
                 type: 'object',
                 required: ['oracle_bridge_params'],
@@ -4135,7 +4224,7 @@ const components = {
     },
     '#/components/schemas/NftApprovedBy': {
         type: 'array',
-        items: { type: 'string', enum: ['getgems', 'tonkeeper', 'ton.diamonds'] }
+        items: { type: 'string', enum: ['getgems', 'tonkeeper'] }
     },
     '#/components/schemas/TrustType': {
         type: 'string',
@@ -4271,6 +4360,7 @@ const components = {
                 type: 'string',
                 enum: [
                     'TonTransfer',
+                    'ExtraCurrencyTransfer',
                     'JettonTransfer',
                     'JettonBurn',
                     'JettonMint',
@@ -4295,6 +4385,7 @@ const components = {
             },
             status: { type: 'string', enum: ['ok', 'failed'] },
             TonTransfer: { $ref: '#/components/schemas/TonTransferAction' },
+            ExtraCurrencyTransfer: { $ref: '#/components/schemas/ExtraCurrencyTransferAction' },
             ContractDeploy: { $ref: '#/components/schemas/ContractDeployAction' },
             JettonTransfer: { $ref: '#/components/schemas/JettonTransferAction' },
             JettonBurn: { $ref: '#/components/schemas/JettonBurnAction' },
@@ -4328,6 +4419,27 @@ const components = {
             comment: { type: 'string' },
             encrypted_comment: { $ref: '#/components/schemas/EncryptedComment' },
             refund: { $ref: '#/components/schemas/Refund' }
+        }
+    },
+    '#/components/schemas/EcPreview': {
+        type: 'object',
+        required: ['symbol', 'decimals', 'image'],
+        properties: {
+            symbol: { type: 'string' },
+            decimals: { type: 'integer' },
+            image: { type: 'string' }
+        }
+    },
+    '#/components/schemas/ExtraCurrencyTransferAction': {
+        type: 'object',
+        required: ['sender', 'recipient', 'amount', 'currency'],
+        properties: {
+            sender: { $ref: '#/components/schemas/AccountAddress' },
+            recipient: { $ref: '#/components/schemas/AccountAddress' },
+            amount: { type: 'string', 'x-js-format': 'bigint' },
+            comment: { type: 'string' },
+            encrypted_comment: { $ref: '#/components/schemas/EncryptedComment' },
+            currency: { $ref: '#/components/schemas/EcPreview' }
         }
     },
     '#/components/schemas/SmartContractAction': {
@@ -4782,6 +4894,17 @@ const components = {
                             }
                         }
                     },
+                    wallet_v5: {
+                        type: 'object',
+                        required: ['raw_messages', 'valid_until'],
+                        properties: {
+                            valid_until: { type: 'integer', format: 'int64' },
+                            raw_messages: {
+                                type: 'array',
+                                items: { $ref: '#/components/schemas/DecodedRawMessage' }
+                            }
+                        }
+                    },
                     wallet_highload_v2: {
                         type: 'object',
                         required: ['subwallet_id', 'bounded_query_id', 'raw_messages'],
@@ -4881,12 +5004,20 @@ const components = {
     },
     '#/components/schemas/JettonInfo': {
         type: 'object',
-        required: ['mintable', 'total_supply', 'metadata', 'verification', 'holders_count'],
+        required: [
+            'mintable',
+            'total_supply',
+            'metadata',
+            'verification',
+            'holders_count',
+            'preview'
+        ],
         properties: {
             mintable: { type: 'boolean' },
             total_supply: { type: 'string', 'x-js-format': 'bigint' },
             admin: { $ref: '#/components/schemas/AccountAddress' },
             metadata: { $ref: '#/components/schemas/JettonMetadata' },
+            preview: { type: 'string' },
             verification: { $ref: '#/components/schemas/JettonVerificationType' },
             holders_count: { type: 'integer', format: 'int32' }
         }
@@ -5116,6 +5247,16 @@ const components = {
             market: { type: 'string' },
             usd_price: { type: 'number' },
             last_date_update: { type: 'integer', format: 'int64' }
+        }
+    },
+    '#/components/schemas/ExtraCurrency': {
+        type: 'object',
+        required: ['id', 'amount', 'decimals'],
+        properties: {
+            id: { type: 'integer', format: 'int32' },
+            amount: { type: 'string', 'x-js-format': 'bigint' },
+            name: { type: 'string' },
+            decimals: { type: 'integer' }
         }
     }
 };
@@ -5738,6 +5879,14 @@ export class TonApiClient {
                  * @example ["0:9a33970f617bcd71acf2cd28357c067aa31859c02820d8f01d74c88063a8f4d8"]
                  */
                 args?: string[];
+                /**
+                 * A temporary fix to switch to a scheme with direct ordering of arguments.
+                 * If equal to false, then the method takes arguments in direct order,
+                 * e.g. for get_nft_content(int index, cell individual_content) we pass a list of arguments [index, individual_content].
+                 * If equal to true, then the method takes arguments in reverse order, e.g. [individual_content, index].
+                 * @default true
+                 */
+                fix_order?: boolean;
             },
             params: RequestParams = {}
         ) => {
@@ -7731,53 +7880,6 @@ export class TonApiClient {
         }
     };
     wallet = {
-        /**
-         * @description Get backup info
-         *
-         * @tags Wallet
-         * @name GetWalletBackup
-         * @request GET:/v2/wallet/backup
-         */
-        getWalletBackup: (params: RequestParams = {}) => {
-            const req = this.http.request<
-                {
-                    dump: string;
-                },
-                Error
-            >({
-                path: `/v2/wallet/backup`,
-                method: 'GET',
-                format: 'json',
-                ...params
-            });
-
-            return prepareResponse<{
-                dump: string;
-            }>(req, {
-                type: 'object',
-                required: ['dump'],
-                properties: { dump: { type: 'string' } }
-            });
-        },
-
-        /**
-         * @description Set backup info
-         *
-         * @tags Wallet
-         * @name SetWalletBackup
-         * @request PUT:/v2/wallet/backup
-         */
-        setWalletBackup: (data: File, params: RequestParams = {}) => {
-            const req = this.http.request<void, Error>({
-                path: `/v2/wallet/backup`,
-                method: 'PUT',
-                body: prepareRequestData(data),
-                ...params
-            });
-
-            return prepareResponse<void>(req);
-        },
-
         /**
          * @description Account verification and token issuance
          *

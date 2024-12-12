@@ -396,6 +396,17 @@ paths:
             items:
               type: string
             example: [ "0:9a33970f617bcd71acf2cd28357c067aa31859c02820d8f01d74c88063a8f4d8" ]
+        - name: fix_order
+          in: query
+          required: false
+          schema:
+            type: boolean
+            description: |-
+              A temporary fix to switch to a scheme with direct ordering of arguments. 
+              If equal to false, then the method takes arguments in direct order,
+              e.g. for get_nft_content(int index, cell individual_content) we pass a list of arguments [index, individual_content].
+              If equal to true, then the method takes arguments in reverse order, e.g. [individual_content, index].
+            default: true
       responses:
         '200':
           description: method execution result
@@ -1931,51 +1942,6 @@ paths:
                 $ref: '#/components/schemas/AccountInfoByStateInit'
         'default':
           $ref: '#/components/responses/Error'
-  
-  /v2/wallet/backup:
-    get:
-      description: Get backup info
-      operationId: getWalletBackup
-      tags:
-        - Wallet
-      parameters:
-        - in: header
-          name: X-TonConnect-Auth
-          schema:
-            type: string
-          required: true
-      responses:
-        '200':
-          description: get wallet dump
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - dump
-                properties:
-                  dump:
-                    type: string
-        'default':
-          $ref: '#/components/responses/Error'
-    put:
-      description: Set backup info
-      operationId: setWalletBackup
-      tags:
-        - Wallet
-      parameters:
-        - in: header
-          name: X-TonConnect-Auth
-          schema:
-            type: string
-          required: true
-      requestBody:
-        $ref: "#/components/requestBodies/Backup"
-      responses:
-        '200':
-          description: success
-        'default':
-          $ref: '#/components/responses/Error'
   /v2/wallet/auth/proof:
     post:
       description: Account verification and token issuance
@@ -3337,14 +3303,6 @@ components:
                   state_init:
                     type: string
                     format: cell-base64
-    Backup:
-      description: "Information for saving backup"
-      required: true
-      content:
-        application/octet-stream:
-          schema:
-            type: string
-            format: binary
     TonConnectStateInit:
       description: "Data that is expected"
       required: true
@@ -3765,6 +3723,10 @@ components:
           format: int64
           x-js-format: bigint
           example: 60000000
+        value_extra:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtraCurrency'
         fwd_fee:
           type: integer
           format: int64
@@ -4642,6 +4604,10 @@ components:
           format: int64
           example: 123456789
           x-js-format: bigint
+        extra_balance:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtraCurrency'
         currencies_balance:
           description: "{'USD': 1, 'IDR': 1000}"
           type: object
@@ -5288,6 +5254,27 @@ components:
                 example: 0:0000000000000000000000000000000000000000000000000000000000000000
             suspended_until:
               type: integer
+
+        "45":
+          type: object
+          description: precompiled contracts
+          required:
+            - contracts
+          properties:
+            contracts:
+              type: array
+              items:
+                type: object
+                required:
+                  - code_hash
+                  - gas_usage
+                properties:
+                  code_hash:
+                    type: string
+                    format: address
+                  gas_usage:
+                    type: integer
+                    format: int64
         "71":
           type: object
           description: Bridge parameters for wrapping TON in other networks.
@@ -5497,7 +5484,6 @@ components:
         enum:
           - getgems
           - tonkeeper
-          - ton.diamonds
     TrustType:
       type: string
       example: whitelist
@@ -5758,6 +5744,7 @@ components:
           example: "TonTransfer"
           enum:
             - TonTransfer
+            - ExtraCurrencyTransfer
             - JettonTransfer
             - JettonBurn
             - JettonMint
@@ -5786,6 +5773,8 @@ components:
             - failed
         TonTransfer:
           $ref: '#/components/schemas/TonTransferAction'
+        ExtraCurrencyTransfer:
+          $ref: '#/components/schemas/ExtraCurrencyTransferAction'
         ContractDeploy:
           $ref: '#/components/schemas/ContractDeployAction'
         JettonTransfer:
@@ -5856,6 +5845,46 @@ components:
           $ref: '#/components/schemas/EncryptedComment'
         refund:
           $ref: '#/components/schemas/Refund'
+    EcPreview:
+      type: object
+      required:
+        - symbol
+        - decimals
+        - image
+      properties:
+        symbol:
+          type: string
+          example: FMS
+        decimals:
+          type: integer
+          example: 5
+        image:
+          type: string
+          example: https://cache.tonapi.io/images/extra.jpg
+    ExtraCurrencyTransferAction:
+      type: object
+      required:
+        - sender
+        - recipient
+        - amount
+        - currency
+      properties:
+        sender:
+          $ref: '#/components/schemas/AccountAddress'
+        recipient:
+          $ref: '#/components/schemas/AccountAddress'
+        amount:
+          type: string
+          x-js-format: bigint
+          example: "1000000000"
+          description: amount in quanta of tokens
+        comment:
+          type: string
+          example: "Hi! This is your salary. \nFrom accounting with love."
+        encrypted_comment:
+          $ref: '#/components/schemas/EncryptedComment'
+        currency:
+          $ref: '#/components/schemas/EcPreview'
     SmartContractAction:
       type: object
       required:
@@ -6761,6 +6790,20 @@ components:
                   type: array
                   items:
                     $ref: '#/components/schemas/DecodedRawMessage'
+            wallet_v5:
+              type: object
+              required:
+                - raw_messages
+                - valid_until
+              properties:
+                valid_until:
+                  type: integer
+                  format: int64
+                  example: 1
+                raw_messages:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/DecodedRawMessage'
             wallet_highload_v2:
               type: object
               required:
@@ -6866,7 +6909,8 @@ components:
           example: "9"
         image:
           type: string
-          example: "https://cache.tonapi.io/images/jetton.jpg"
+          example: "https://bitcoincash-example.github.io/website/logo.png"
+          description: this field currently returns a cached image URL (e.g., "https://cache.tonapi.io/images/jetton.jpg"). In the future, this will be replaced with the original URL from the metadata. The cached image is already available in the `preview` field of `JettonInfo` and will remain there.
         description:
           type: string
           example: Wrapped Toncoin
@@ -6938,6 +6982,7 @@ components:
         - metadata
         - verification
         - holders_count
+        - preview
       properties:
         mintable:
           type: boolean
@@ -6950,6 +6995,9 @@ components:
           $ref: '#/components/schemas/AccountAddress'
         metadata:
           $ref: '#/components/schemas/JettonMetadata'
+        preview:
+          type: string
+          example: "https://cache.tonapi.io/images/jetton.jpg"
         verification:
           $ref: '#/components/schemas/JettonVerificationType'
         holders_count:
@@ -7392,6 +7440,27 @@ components:
           type: integer
           format: int64
           example: 1668436763
+    ExtraCurrency:
+          type: object
+          required:
+            - id
+            - amount
+            - decimals
+          properties:
+            id:
+              type: integer
+              example: 239
+              format: int32
+            amount:
+              type: string
+              x-js-format: bigint
+              example: "1000000000"
+            name:
+              type: string
+              example: FMS
+            decimals:
+              type: integer
+              example: 5
   
   responses:
     Error:
@@ -7405,3 +7474,6 @@ components:
             properties:
               error:
                 type: string
+              error_code:
+                type: integer
+                format: int64
